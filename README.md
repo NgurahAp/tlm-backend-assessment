@@ -2,7 +2,7 @@
 
 NestJS backend untuk pengerjaan Lumiere Backend Assessment secara bertahap.
 
-Phase 0 sampai Phase 3 sudah diimplementasikan. Project memiliki fondasi NestJS dan Prisma, jawaban SQL A1–A7, read API, checkout dengan pemeriksaan Inventory API, kalkulasi decimal, atomic persistence, integrasi pembayaran, audit record, structured logging, serta automated test. Real Payment API smoke test dilakukan setelah nama kandidat dikonfigurasi.
+Phase 0 sampai Phase 4 sudah diimplementasikan. Project memiliki fondasi NestJS dan Prisma, jawaban SQL A1–A7, read API, checkout dengan pemeriksaan Inventory API, kalkulasi decimal, atomic persistence, integrasi pembayaran, audit record, structured logging, Swagger, serta automated test. Smoke test Inventory dan Payment API assessment juga sudah dilakukan.
 
 Rencana lengkap tersedia di [PRD.md](./PRD.md).
 
@@ -105,6 +105,9 @@ npm run build
 npm run test
 npm run test:e2e
 npm run test:integration
+
+# run the complete final verification sequence
+npm run verify
 ```
 
 ## Database
@@ -171,6 +174,8 @@ Setiap HTTP request dicatat otomatis dengan method, path, status, dan `latencyMs
 
 `logs/debug.log` adalah runtime artifact dan tidak di-commit. Hanya `logs/.gitkeep` yang disimpan agar struktur folder tetap tersedia.
 
+File log dirotasi ketika mencapai batas ukuran. Nilai default-nya adalah 10 MB per file dengan maksimal lima file lama. Batas tersebut dapat disesuaikan melalui `LOG_MAX_SIZE_MB` dan `LOG_MAX_FILES`.
+
 ## Request Pipeline
 
 Setiap request menggunakan `X-Request-Id` dari client jika nilainya aman, atau UUID baru jika header tidak tersedia. ID yang sama dikembalikan melalui response header dan digunakan pada structured log serta error response.
@@ -184,3 +189,11 @@ Global validation mengaktifkan transformasi DTO, whitelist, dan penolakan field 
 - Application health: `http://localhost:3000/health`
 
 Health memeriksa proses aplikasi. PostgreSQL tidak di-query ulang pada setiap health request, tetapi aplikasi hanya berhasil startup setelah `PrismaService` memverifikasi koneksi database.
+
+## Final Submission Checklist
+
+- Pastikan `npm run verify` selesai tanpa error.
+- Pastikan `.env`, `logs/debug.log`, `node_modules`, `dist`, dan generated Prisma Client tidak masuk Git.
+- Pastikan `database/queries.txt` dan `database/database.sql` tersedia.
+- Gunakan nama repository `tlm-backend-assessment` sesuai instruksi assessment.
+- Invite GitHub username `ahmadaait` dan `fajritheloudminority` sebagai contributor.

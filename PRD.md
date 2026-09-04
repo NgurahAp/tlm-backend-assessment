@@ -563,6 +563,8 @@ CANDIDATE_NAME=
 LOG_LEVEL=debug
 LOG_FILE=logs/debug.log
 LOG_PRETTY=true
+LOG_MAX_SIZE_MB=10
+LOG_MAX_FILES=5
 ```
 
 `.env` memuat credential aktual dan tidak boleh di-commit. `.env.example` hanya memuat placeholder. Karakter khusus pada password di `DATABASE_URL` wajib menggunakan percent-encoding. Phase 0 hanya menyiapkan serta memvalidasi konfigurasi non-database; Prisma mulai menggunakan `DATABASE_URL` pada Phase 1.
@@ -887,7 +889,7 @@ Pesan internal, stack trace, credential, dan response eksternal mentah tidak dik
 - [x] **C3 — Sinkronisasi status:** status order berubah menjadi `PAID` hanya setelah status pembayaran diverifikasi `PAID`.
 - [x] **C4 — Error dan audit:** kegagalan menghasilkan HTTP error aman, payment audit record berstatus `PAYMENT_FAILED`, serta structured log dengan `requestId`.
 - [x] **C5 — Debug log:** event inquiry, pay, status, keberhasilan, dan kegagalan ditulis ke `logs/debug.log` dengan redaction header kandidat.
-- [ ] **Real Payment API smoke test:** dilakukan setelah `CANDIDATE_NAME` aktual tersedia dan response nyata inquiry, pay, serta status dapat diverifikasi berurutan.
+- [x] **Real Payment API smoke test:** response nyata inquiry, pay, dan status telah diverifikasi berurutan menggunakan candidate header aktual.
 
 ### Acceptance Criteria
 
@@ -913,6 +915,14 @@ Pesan internal, stack trace, credential, dan response eksternal mentah tidak dik
 - Pastikan `.txt` jawaban SQL tersedia.
 - Rapikan struktur repository.
 - Verifikasi repository naming dan checklist contributor.
+
+### Urutan Pengerjaan
+
+- [x] **Phase 4.1 — Swagger:** lengkapi contoh checkout, error response, parameter path, dan cakupan status code utama.
+- [x] **Phase 4.2 — Observability:** audit request ID serta redaction, teruskan correlation ID ke external API, dan batasi file log dengan rotasi berbasis ukuran.
+- [x] **Phase 4.3 — Artifact:** pastikan `queries.txt`, migration, dan schema-only `database.sql` tersedia serta konsisten.
+- [x] **Phase 4.4 — Final verification:** Prisma validation, build, lint, 28 unit test, 8 integration test, dan 19 e2e test lulus pada dependency final.
+- [ ] **Phase 4.5 — Repository delivery:** gunakan nama repository yang diminta dan invite dua contributor assessment. Langkah ini dilakukan manual oleh pemilik repository.
 
 ### Acceptance Criteria
 
@@ -965,14 +975,14 @@ tlm-backend-assessment/
 13. Phase 2 menghentikan proses pada order berstatus `Pending`; response pembayaran dan status `PAID` baru menjadi bagian dari Phase 3.
 14. Inventory API assessment menyediakan `product_name` dan `stock`, tetapi tidak menyediakan harga. Oleh karena itu subtotal per item diterima dari request dan divalidasi, sementara agregat subtotal order, diskon, dan grand total selalu dihitung server.
 
-## 16. Informasi yang Diisi Kemudian
+## 16. Konfigurasi Aktual Sebelum Delivery
 
-Informasi berikut tidak menghambat penyusunan fondasi, tetapi harus tersedia sebelum real API smoke test:
+Informasi berikut harus diverifikasi pada environment lokal sebelum repository dikirim:
 
-- Nama kandidat untuk `X-CANDIDATES-NAME`.
+- Nama kandidat untuk `X-CANDIDATES-NAME` sudah dikonfigurasi lokal dan tidak disimpan di repository.
 - `DATABASE_URL` yang valid, sudah dirotasi, dan tersimpan hanya pada `.env` lokal.
-- Bentuk response aktual Inventory API.
-- Konfirmasi akses ke domain assessment dari environment pengujian.
+- Bentuk response aktual Inventory API sudah diverifikasi melalui smoke test.
+- Akses ke Inventory dan Payment API assessment sudah diverifikasi dari environment pengujian.
 
 ## 17. Definition of Done Keseluruhan
 

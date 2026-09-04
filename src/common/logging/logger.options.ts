@@ -33,6 +33,8 @@ export function createLoggerOptions(config: ConfigService): Params {
   const level = config.getOrThrow<LevelWithSilent>('logging.level');
   const logFile = config.getOrThrow<string>('logging.file');
   const pretty = config.getOrThrow<boolean>('logging.pretty');
+  const maxSizeMb = config.getOrThrow<number>('logging.maxSizeMb');
+  const maxFiles = config.getOrThrow<number>('logging.maxFiles');
   const service = config.getOrThrow<string>('app.serviceName');
   const environment = config.getOrThrow<string>('app.nodeEnv');
 
@@ -53,11 +55,16 @@ export function createLoggerOptions(config: ConfigService): Params {
           options: { destination: 1 },
         },
     {
-      target: 'pino/file',
+      target: 'pino-roll',
       level,
       options: {
-        destination: logFile,
+        file: logFile,
         mkdir: true,
+        size: `${maxSizeMb}m`,
+        limit: {
+          count: maxFiles,
+          removeOtherLogFiles: false,
+        },
       },
     },
   ];

@@ -45,6 +45,7 @@ export class InventoryClient {
     const url = `${this.baseUrl}/${inventoryId}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    let externalStatusCode: number | undefined;
 
     this.logger.info(
       {
@@ -59,9 +60,13 @@ export class InventoryClient {
     try {
       const response = await this.fetcher(url, {
         method: 'GET',
-        headers: { accept: 'application/json' },
+        headers: {
+          accept: 'application/json',
+          'X-Request-Id': requestId,
+        },
         signal: controller.signal,
       });
+      externalStatusCode = response.status;
 
       if (response.status === 404) {
         throw new NotFoundException({
@@ -117,7 +122,7 @@ export class InventoryClient {
         error instanceof NotFoundException ||
         error instanceof BadGatewayException
       ) {
-        this.logFailure(error, requestId, inventoryId);
+        this.logFailure(error, requestId, inventoryId, externalStatusCode);
         throw error;
       }
 
@@ -134,7 +139,13 @@ export class InventoryClient {
         code: 'INVENTORY_UPSTREAM_ERROR',
         message: 'Inventory service could not be reached',
       });
-      this.logFailure(upstreamError, requestId, inventoryId, error);
+      this.logFailure(
+        upstreamError,
+        requestId,
+        inventoryId,
+        externalStatusCode,
+        error,
+      );
       throw upstreamError;
     } finally {
       clearTimeout(timeout);
@@ -171,6 +182,7 @@ export class InventoryClient {
     error: Error,
     requestId: string,
     inventoryId: number,
+    externalStatusCode?: number,
     cause?: unknown,
   ): void {
     this.logger.warn(
@@ -179,6 +191,7 @@ export class InventoryClient {
         requestId,
         inventoryId,
         externalService: 'inventory',
+        externalStatusCode,
         err: cause ?? error,
       },
       error.message,

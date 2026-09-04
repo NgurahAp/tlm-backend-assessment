@@ -15,10 +15,22 @@ describe('environmentValidationSchema', () => {
       LOG_LEVEL: 'debug',
       LOG_FILE: 'logs/debug.log',
       LOG_PRETTY: true,
+      LOG_MAX_SIZE_MB: 10,
+      LOG_MAX_FILES: 5,
     });
     expect(value.DATABASE_URL).toBe(
       'postgresql://user:password@localhost:5432/database',
     );
+  });
+
+  it('rejects invalid log rotation limits', () => {
+    const { error } = environmentValidationSchema.validate({
+      DATABASE_URL: 'postgresql://postgres:password@localhost:5432/lumiere',
+      LOG_MAX_SIZE_MB: 0,
+      LOG_MAX_FILES: -1,
+    });
+
+    expect(error).toBeDefined();
   });
 
   it('requires a PostgreSQL database URL', () => {

@@ -124,6 +124,23 @@ describe('Checkout (e2e)', () => {
 
     expect(response.body.paths).toHaveProperty('/checkout');
     expect(response.body.paths['/checkout']).toHaveProperty('post');
+    const checkout = response.body.paths['/checkout'].post;
+    expect(
+      checkout.requestBody.content['application/json'].examples,
+    ).toHaveProperty('availableInventory');
+    expect(
+      checkout.requestBody.content['application/json'].examples,
+    ).toHaveProperty('unavailableInventory');
+    expect(checkout.responses).toMatchObject({
+      201: expect.any(Object),
+      400: expect.any(Object),
+      404: expect.any(Object),
+      409: expect.any(Object),
+      422: expect.any(Object),
+      500: expect.any(Object),
+      502: expect.any(Object),
+      504: expect.any(Object),
+    });
   });
 
   it('creates an order atomically after checking inventory IDs 1 and 2', async () => {

@@ -22,4 +22,6 @@ export const environmentValidationSchema = Joi.object({
     .default('debug'),
   LOG_FILE: Joi.string().trim().min(1).default('logs/debug.log'),
   LOG_PRETTY: Joi.boolean().truthy('true').falsy('false').default(true),
+  LOG_MAX_SIZE_MB: Joi.number().integer().positive().default(10),
+  LOG_MAX_FILES: Joi.number().integer().positive().default(5),
 });

@@ -6,6 +6,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
 import { ApiErrorResponseDto } from '../common/dto/api-error-response.dto.js';
@@ -53,6 +54,11 @@ export class OrdersController {
 
   @Get(':id/items')
   @ApiOperation({ summary: 'List items belonging to a specific order' })
+  @ApiParam({
+    name: 'id',
+    description: 'Order ID.',
+    schema: { type: 'integer', minimum: 1, example: 1 },
+  })
   @ApiOkResponse({
     description: 'Order items ordered by ID.',
     type: OrderItemsResponseDto,
@@ -82,6 +88,11 @@ export class OrdersController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get an order and its items' })
+  @ApiParam({
+    name: 'id',
+    description: 'Order ID.',
+    schema: { type: 'integer', minimum: 1, example: 1 },
+  })
   @ApiOkResponse({ description: 'Order detail.', type: OrderDetailResponseDto })
   @ApiBadRequestResponse({
     description: 'Order ID is not a positive integer.',

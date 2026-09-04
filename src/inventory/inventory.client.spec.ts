@@ -50,6 +50,14 @@ describe('InventoryClient', () => {
       'https://inventory.test/api/v1/1',
       expect.objectContaining({ method: 'GET' }),
     );
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://inventory.test/api/v1/1',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'X-Request-Id': 'request-1',
+        }),
+      }),
+    );
   });
 
   it('rejects an invalid upstream response', async () => {

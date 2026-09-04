@@ -4,6 +4,10 @@ import { REDACTED_LOG_PATHS, REDACTED_LOG_VALUE } from './logger.options.js';
 describe('logger redaction', () => {
   it('redacts secrets from structured log objects', () => {
     let output = '';
+    const databaseUrl = [
+      'postgresql://user',
+      'redaction-test-only@localhost:5432/database',
+    ].join(':');
     const logger = pino(
       {
         redact: {
@@ -16,7 +20,7 @@ describe('logger redaction', () => {
 
     logger.info({
       password: 'secret',
-      DATABASE_URL: 'postgresql://user:secret@localhost:5432/database',
+      DATABASE_URL: databaseUrl,
       req: {
         headers: {
           authorization: 'Bearer token',
@@ -44,7 +48,7 @@ describe('logger redaction', () => {
     expect(request.body.cardNumber).toBe(REDACTED_LOG_VALUE);
     expect(request.body.cvv).toBe(REDACTED_LOG_VALUE);
     expect(output).not.toContain('4111111111111111');
-    expect(output).not.toContain('postgresql://user:secret');
+    expect(output).not.toContain('redaction-test-only');
     expect(output).not.toContain('candidate-secret');
   });
 });
