@@ -70,14 +70,15 @@ Pihak yang menjalankan aplikasi, membaca Swagger dan README, menjalankan test, s
 - `class-validator` dan `class-transformer` untuk validasi request DTO.
 - NestJS HTTP client untuk komunikasi dengan Inventory API dan Payment API.
 - Vitest dan Supertest untuk unit serta end-to-end test.
-- Logger terstruktur dengan output file `debug.log`.
+- Structured logger menggunakan `nestjs-pino` dan Pino.
+- `pino-pretty` untuk terminal development dan newline-delimited JSON untuk `logs/debug.log`.
 
 ### 5.2 Prinsip Arsitektur
 
 - Controller hanya menangani HTTP request dan response.
 - Business flow checkout berada di `CheckoutService`.
 - Integrasi eksternal dipisahkan ke `InventoryService` dan `PaymentService`.
-- Akses database menggunakan repository dan transaction manager.
+- Akses database menggunakan Prisma Client dan Prisma transaction.
 - Request serta response dari API eksternal divalidasi sebelum digunakan.
 - Konfigurasi dan secret hanya dibaca dari environment variables.
 - Error internal diterjemahkan menjadi response API yang konsisten.
@@ -96,13 +97,18 @@ src/
     logging/
   config/
   prisma/
-    migrations/
-    schema.prisma
+    prisma.module.ts
+    prisma.service.ts
   health/
   orders/
   checkout/
   inventory/
   payments/
+prisma/
+  migrations/
+  schema.prisma
+logs/
+  .gitkeep
 ```
 
 ## 6. Requirement Fungsional
@@ -386,11 +392,11 @@ Seluruh error harus diterjemahkan ke status HTTP dan body response yang konsiste
 
 ### FR-ERR-02 — Error Traceability
 
-Setiap request harus memiliki `request_id`. Nilai yang sama wajib tersedia pada response error dan seluruh log terkait agar insiden dapat dicari kembali untuk kebutuhan audit.
+Setiap request harus memiliki `requestId`. Sistem menggunakan nilai header `X-Request-Id` dari client jika tersedia atau membuat UUID baru. Nilai yang sama wajib dikembalikan melalui response header, tersedia pada response error, dan dicatat pada seluruh log terkait agar insiden dapat dicari kembali untuk kebutuhan audit.
 
 ### FR-LOG-01 — Debug Log
 
-Error fungsi, kegagalan external API, dan bug yang ditemukan saat runtime atau testing harus ditulis ke `logs/debug.log` dengan context yang cukup dan tanpa membocorkan secret.
+HTTP request, business event penting, error fungsi, kegagalan external API, dan bug yang ditemukan saat runtime atau testing harus dicatat secara terstruktur. Terminal development menggunakan format `pino-pretty`, sedangkan `logs/debug.log` menggunakan satu JSON object per baris agar dapat dicari dan diproses secara otomatis.
 
 ## 7. Kontrak Response
 
@@ -407,7 +413,7 @@ Error fungsi, kegagalan external API, dan bug yang ditemukan saat runtime atau t
     "discount": "10.00",
     "grand_total": "1800000.00"
   },
-  "request_id": "019..."
+  "requestId": "019..."
 }
 ```
 
@@ -421,7 +427,7 @@ Error fungsi, kegagalan external API, dan bug yang ditemukan saat runtime atau t
     "message": "Inventory item 3 is out of stock",
     "details": []
   },
-  "request_id": "019...",
+  "requestId": "019...",
   "timestamp": "2026-09-03T10:00:00.000Z",
   "path": "/checkout"
 }
@@ -445,37 +451,39 @@ Error fungsi, kegagalan external API, dan bug yang ditemukan saat runtime atau t
 
 ### 8.1 Output
 
-Error dan debug information ditulis ke:
+Output logging dibagi berdasarkan environment:
 
-```text
-logs/debug.log
-```
+- Development terminal: format berwarna dan mudah dibaca melalui `pino-pretty`.
+- File audit assessment: newline-delimited JSON di `logs/debug.log`.
+- Production: JSON ke stdout; file tetap dapat diaktifkan untuk memenuhi requirement assessment.
 
 ### 8.2 Field Log Minimum
 
-- Timestamp ISO-8601.
-- Log level.
-- Request/correlation ID.
-- Operation atau service name.
-- Order number jika tersedia.
-- Transaction ID jika tersedia.
-- External service name.
-- External HTTP status jika tersedia.
-- Internal error code.
-- Error message.
-- Stack trace untuk exception internal.
+- `time` dalam ISO-8601.
+- `level`.
+- `service`.
+- `event` dengan pola domain, misalnya `checkout.received`.
+- `requestId`.
+- `method`, `path`, `statusCode`, dan `latencyMs` untuk HTTP request.
+- `orderNumber` dan `transactionId` jika tersedia.
+- `externalService` dan external HTTP status jika tersedia.
+- `errorCode` dan `msg`.
+- Stack trace hanya untuk exception internal pada log, tidak pada response API.
 
 ### 8.3 Data yang Tidak Boleh Dicatat
 
 - Database password.
+- Database connection string atau `DATABASE_URL`.
 - Authorization token.
+- Cookie dan session identifier.
+- Card number, CVV, access token, refresh token, serta request body sensitif.
 - Candidate header mentah jika dianggap sensitif.
 - Secret dari environment.
 - Data pribadi yang tidak diperlukan.
 
 ### 8.4 Traceability
 
-Nilai `request_id` dikembalikan pada response error dan dicatat pada seluruh log dalam satu alur checkout sehingga error dapat dicari kembali saat audit.
+Nilai `requestId` dikembalikan pada response error dan header `X-Request-Id`, lalu dicatat pada seluruh log dalam satu alur checkout sehingga error dapat dicari kembali saat audit.
 
 ## 9. Swagger / OpenAPI
 
@@ -484,6 +492,8 @@ Swagger tersedia melalui:
 ```text
 /docs
 ```
+
+OpenAPI JSON tersedia melalui `/docs-json`.
 
 Dokumentasi minimal mencakup:
 
@@ -505,13 +515,9 @@ Dokumentasi minimal mencakup:
 ```dotenv
 NODE_ENV=development
 PORT=3000
+SERVICE_NAME=tlm-backend-assessment
 
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=lumiere_ecommerce
-DB_USERNAME=postgres
-DB_PASSWORD=
-DB_SSL=false
+DATABASE_URL="postgresql://postgres:CHANGE_ME@localhost:5432/lumiere_ecommerce?schema=public"
 
 INVENTORY_BASE_URL=https://assessment.lumiere.dev/api/v1/inventory
 PAYMENT_BASE_URL=https://assessment.lumiere.dev/api/v1/payment
@@ -520,9 +526,10 @@ EXTERNAL_API_TIMEOUT_MS=5000
 CANDIDATE_NAME=
 LOG_LEVEL=debug
 LOG_FILE=logs/debug.log
+LOG_PRETTY=true
 ```
 
-Nilai credential asli tidak boleh di-commit.
+`.env` memuat credential aktual dan tidak boleh di-commit. `.env.example` hanya memuat placeholder. Karakter khusus pada password di `DATABASE_URL` wajib menggunakan percent-encoding. Phase 0 hanya menyiapkan serta memvalidasi konfigurasi non-database; Prisma mulai menggunakan `DATABASE_URL` pada Phase 1.
 
 ## 11. Non-Functional Requirements
 
@@ -552,7 +559,9 @@ Nilai credential asli tidak boleh di-commit.
 
 - Setiap request memiliki correlation ID.
 - Seluruh kegagalan external API memiliki log yang dapat ditelusuri.
-- Log file mendukung rotation atau batas ukuran.
+- HTTP request dan business event memiliki field terstruktur yang konsisten.
+- Secret dan request field sensitif di-redact sebelum log ditulis.
+- Log rotation atau batas ukuran diselesaikan pada Phase 4.
 
 ### NFR-05 — Documentation
 
@@ -629,14 +638,26 @@ External API dimock pada automated test agar hasil test deterministik. Pengujian
 - Rapikan scaffold NestJS.
 - Tetapkan package name `tlm-backend-assessment`.
 - Tambahkan configuration module dan environment validation.
-- Tambahkan koneksi PostgreSQL melalui Prisma.
 - Tambahkan global validation pipe.
-- Tambahkan correlation ID.
+- Tambahkan `nestjs-pino`, `pino-pretty`, structured HTTP logging, dan structured business logging.
+- Tambahkan correlation ID melalui `X-Request-Id` atau UUID baru.
+- Tambahkan redaction untuk authorization, cookie, password, token, card number, CVV, dan database URL.
 - Tambahkan global exception format dasar.
-- Tambahkan file logger dasar.
+- Tambahkan pretty console log dan JSON file logger ke `logs/debug.log`.
 - Tambahkan Swagger di `/docs`.
+- Tambahkan OpenAPI JSON di `/docs-json`.
 - Tambahkan `GET /health`.
-- Buat `.env.example` dan README awal.
+- Buat `.env.example` dengan placeholder `DATABASE_URL` dan README awal.
+
+Tidak termasuk Phase 0: instalasi Prisma, koneksi database, pembuatan schema, dan eksekusi migration.
+
+### Urutan Pengerjaan
+
+- [x] **Phase 0.1 — Scaffold dan konfigurasi:** rapikan metadata project, pasang configuration module, validasi environment non-database, buat `.env.example`, dan pastikan aplikasi tetap dapat startup tanpa PostgreSQL.
+- [x] **Phase 0.2 — Logging:** pasang `nestjs-pino` serta `pino-pretty`, aktifkan pretty log di terminal, tulis JSON ke `logs/debug.log`, dan konfigurasi redaction.
+- [x] **Phase 0.3 — Request pipeline:** tambahkan `X-Request-Id`, global validation pipe, dan global exception filter dengan kontrak response standar.
+- [x] **Phase 0.4 — Dokumentasi API:** tambahkan `GET /health`, Swagger `/docs`, dan OpenAPI JSON `/docs-json`.
+- [x] **Phase 0.5 — Verifikasi fondasi:** tambah atau sesuaikan test, jalankan build, lint, unit test, e2e test, lalu periksa bahwa secret dan runtime log tidak masuk Git.
 
 ### Acceptance Criteria
 
@@ -644,16 +665,25 @@ External API dimock pada automated test agar hasil test deterministik. Pengujian
 - `npm run build` berhasil.
 - `npm run lint` berhasil.
 - Baseline unit test dan e2e test berhasil.
-- Aplikasi dapat startup menggunakan konfigurasi PostgreSQL yang valid.
+- Aplikasi dapat startup tanpa membuka koneksi PostgreSQL.
 - `GET /health` mengembalikan response sukses.
 - `/docs` menampilkan Swagger UI.
+- `/docs-json` mengembalikan OpenAPI specification.
+- Setiap HTTP response memiliki `X-Request-Id`.
+- Unknown route menghasilkan global error response dengan `requestId`.
+- Terminal development mudah dibaca dan `logs/debug.log` berisi JSON terstruktur.
+- Field sensitif pada log berubah menjadi `[Redacted]` atau dihapus.
 - Tidak ada credential asli dalam Git.
 
 ## Phase 1 — Database dan Jawaban Bagian A
 
 ### Scope
 
-- Query create database PostgreSQL.
+- Install Prisma CLI, Prisma Client, dan PostgreSQL driver adapter yang diperlukan.
+- Konfigurasikan Prisma PostgreSQL melalui `DATABASE_URL` dan Prisma config.
+- Hubungkan project ke database `lumiere_ecommerce` yang sudah tersedia.
+- Tambahkan Prisma service/module dan graceful shutdown.
+- Tulis query A1 untuk membuat database PostgreSQL sebagai jawaban assessment; query ini tidak dieksekusi ke database milik pengguna.
 - Prisma migration dan model `orders`.
 - Prisma migration dan model `order_items`.
 - Foreign key serta constraint.
@@ -664,9 +694,19 @@ External API dimock pada automated test agar hasil test deterministik. Pengujian
 - Endpoint read-only orders sebagai pelengkap.
 - File `database/queries.txt`.
 
+### Urutan Pengerjaan
+
+- [ ] **Phase 1.1 — Prisma foundation:** install dependency Prisma, siapkan Prisma config, hubungkan `DATABASE_URL`, generate client, dan verifikasi koneksi database.
+- [ ] **Phase 1.2 — Schema dan migration:** modelkan `orders` serta `order_items`, buat constraint dan foreign key, lalu terapkan migration.
+- [ ] **Phase 1.3 — Jawaban SQL A1–A7:** tulis seluruh query assessment ke `database/queries.txt` dan pastikan contoh insert serta query read menghasilkan data yang benar.
+- [ ] **Phase 1.4 — Read API:** implementasikan endpoint read-only orders dan order items beserta DTO, service, Swagger, dan error handling.
+- [ ] **Phase 1.5 — Verifikasi database:** jalankan integration test, validasi constraint, dokumentasikan strategi recovery/rollback, dan siapkan export `database.sql` untuk final delivery.
+
 ### Acceptance Criteria
 
-- Migration dapat dijalankan dan di-rollback.
+- Prisma Client berhasil di-generate.
+- Koneksi `DATABASE_URL` berhasil diverifikasi terhadap database `lumiere_ecommerce`.
+- Migration dapat diterapkan pada database kosong dan strategi recovery/rollback didokumentasikan.
 - Seluruh field assessment tersedia dengan tipe PostgreSQL yang benar.
 - Sample insert berhasil.
 - Foreign key menolak `order_id` yang tidak tersedia.
@@ -740,7 +780,7 @@ External API dimock pada automated test agar hasil test deterministik. Pengujian
 
 - Build, lint, unit test, integration test, dan e2e test lulus.
 - Swagger menjelaskan seluruh endpoint dan dapat digunakan untuk demo.
-- Error eksternal dapat ditemukan kembali dengan `request_id`.
+- Error eksternal dapat ditemukan kembali dengan `requestId`.
 - `debug.log` dibuat saat skenario error diuji.
 - `database.sql` dapat di-import ke PostgreSQL kosong.
 - Repository tidak berisi secret, dependency directory, atau log runtime.
@@ -753,12 +793,16 @@ External API dimock pada automated test agar hasil test deterministik. Pengujian
 tlm-backend-assessment/
   src/
   test/
+  prisma/
+    schema.prisma
+    migrations/
   database/
     queries.txt
     database.sql
   logs/
     .gitkeep
   .env.example
+  prisma.config.ts
   PRD.md
   README.md
   package.json
@@ -768,7 +812,7 @@ tlm-backend-assessment/
 
 ## 15. Asumsi dan Keputusan
 
-1. PostgreSQL sudah tersedia dan connection detail diberikan melalui `.env`.
+1. PostgreSQL lokal dan database `lumiere_ecommerce` sudah dibuat oleh pengguna; aplikasi menerima connection string hanya melalui `.env`.
 2. `discount = 10.00` diperlakukan sebagai persentase 10% karena contoh mengubah 2.000.000 menjadi 1.800.000.
 3. Tipe assessment `string` untuk `product_name` diterjemahkan menjadi `VARCHAR(255)`.
 4. Pola nomor order adalah `ORD-YYYYMM-NNN` dan sequence di-reset per bulan.
@@ -779,13 +823,14 @@ tlm-backend-assessment/
 9. Tabel `payments` merupakan extension untuk audit dan tidak menggantikan dua tabel wajib pada bagian A.
 10. Frontend tidak dibuat; Swagger menjadi interface demonstrasi.
 11. Karena catatan "Nomor 1 tuliskan ke bentuk .txt" dapat ditafsirkan berbeda, `queries.txt` akan memuat seluruh jawaban SQL A1 sampai A7 agar tidak ada jawaban database yang terlewat.
+12. Credential database yang pernah dibagikan harus dirotasi. Nilai aslinya tidak disalin ke PRD, source code, `.env.example`, log, atau Git.
 
 ## 16. Informasi yang Diisi Kemudian
 
 Informasi berikut tidak menghambat penyusunan fondasi, tetapi harus tersedia sebelum real API smoke test:
 
 - Nama kandidat untuk `X-CANDIDATES-NAME`.
-- Host, port, database, username, password, dan SSL PostgreSQL.
+- `DATABASE_URL` yang valid, sudah dirotasi, dan tersimpan hanya pada `.env` lokal.
 - Bentuk response aktual Inventory API.
 - Konfirmasi akses ke domain assessment dari environment pengujian.
 
