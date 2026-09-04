@@ -1,0 +1,147 @@
+-- Lumiere Backend Assessment
+-- Bagian A: Pengetahuan Basis Data
+-- PostgreSQL
+
+-- A1. Inisiasi database baru.
+-- Jalankan query ini dari database lain, misalnya "postgres".
+CREATE DATABASE lumiere_ecommerce
+    WITH ENCODING = 'UTF8'
+         TEMPLATE = template0;
+
+
+-- A2. Inisiasi tabel orders.
+-- Jalankan A2 sampai A7 setelah terhubung ke database lumiere_ecommerce.
+CREATE TABLE orders (
+    id SERIAL NOT NULL,
+    order_number VARCHAR(50) NOT NULL,
+    payment_method VARCHAR(30) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'Pending',
+    subtotal NUMERIC(10,2) NOT NULL,
+    discount NUMERIC(10,2) NOT NULL DEFAULT 0,
+    grand_total NUMERIC(10,2) NOT NULL,
+    order_date TIMESTAMP(6) NOT NULL,
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT orders_pkey PRIMARY KEY (id),
+    CONSTRAINT orders_order_number_key UNIQUE (order_number),
+    CONSTRAINT orders_subtotal_nonnegative CHECK (subtotal >= 0),
+    CONSTRAINT orders_discount_percentage_range
+        CHECK (discount >= 0 AND discount <= 100),
+    CONSTRAINT orders_grand_total_nonnegative CHECK (grand_total >= 0)
+);
+
+
+-- A3. Inisiasi tabel order_items.
+CREATE TABLE order_items (
+    id SERIAL NOT NULL,
+    order_id INTEGER NOT NULL,
+    product_name VARCHAR(255) NOT NULL,
+    quantity INTEGER NOT NULL,
+    subtotal NUMERIC(10,2) NOT NULL,
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT order_items_pkey PRIMARY KEY (id),
+    CONSTRAINT order_items_quantity_positive CHECK (quantity > 0),
+    CONSTRAINT order_items_subtotal_nonnegative CHECK (subtotal >= 0),
+    CONSTRAINT order_items_order_id_fkey
+        FOREIGN KEY (order_id)
+        REFERENCES orders(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+CREATE INDEX order_items_order_id_idx ON order_items(order_id);
+
+
+-- A4. Menyimpan sample order yang diberikan pada assessment.
+INSERT INTO orders (
+    id,
+    order_number,
+    payment_method,
+    status,
+    subtotal,
+    discount,
+    grand_total,
+    order_date,
+    created_at,
+    updated_at
+) VALUES (
+    1,
+    'ORD-202601-001',
+    'Credit Card',
+    'Pending',
+    2000000.00,
+    10.00,
+    1800000.00,
+    TIMESTAMP '2026-07-01 10:00:00',
+    TIMESTAMP '2026-07-01 10:00:00',
+    TIMESTAMP '2026-07-01 10:00:00'
+);
+
+-- Sample assessment menggunakan ID eksplisit, sehingga sequence perlu disinkronkan.
+SELECT setval(
+    pg_get_serial_sequence('orders', 'id'),
+    COALESCE((SELECT MAX(id) FROM orders), 1),
+    true
+);
+
+
+-- A5. Menyimpan sample order item yang diberikan pada assessment.
+INSERT INTO order_items (
+    id,
+    order_id,
+    product_name,
+    quantity,
+    subtotal,
+    created_at,
+    updated_at
+) VALUES (
+    1,
+    1,
+    'Huawei Smart Watch',
+    1,
+    2000000.00,
+    TIMESTAMP '2026-07-01 10:00:00',
+    TIMESTAMP '2026-07-01 10:00:00'
+);
+
+-- Sample assessment menggunakan ID eksplisit, sehingga sequence perlu disinkronkan.
+SELECT setval(
+    pg_get_serial_sequence('order_items', 'id'),
+    COALESCE((SELECT MAX(id) FROM order_items), 1),
+    true
+);
+
+
+-- A6. Menampilkan seluruh orders.
+SELECT
+    id,
+    order_number,
+    payment_method,
+    status,
+    subtotal,
+    discount,
+    grand_total,
+    order_date,
+    created_at,
+    updated_at
+FROM orders
+ORDER BY order_date DESC, id DESC;
+
+
+-- A7. Menampilkan order_items berdasarkan order tertentu.
+-- $1 adalah parameter order ID, contoh nilainya: 1.
+SELECT
+    oi.id,
+    oi.order_id,
+    oi.product_name,
+    oi.quantity,
+    oi.subtotal,
+    oi.created_at,
+    oi.updated_at
+FROM order_items AS oi
+INNER JOIN orders AS o ON o.id = oi.order_id
+WHERE o.id = $1
+ORDER BY oi.id ASC;

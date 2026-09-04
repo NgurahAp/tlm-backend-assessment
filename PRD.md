@@ -130,7 +130,7 @@ Sistem harus memiliki tabel `orders` dengan field assessment:
 
 | Field | PostgreSQL Type | Aturan |
 | --- | --- | --- |
-| `id` | `BIGSERIAL` | Primary key |
+| `id` | `SERIAL` / `INTEGER` | Primary key |
 | `order_number` | `VARCHAR(50)` | Wajib dan unik |
 | `payment_method` | `VARCHAR(30)` | Wajib |
 | `status` | `VARCHAR(20)` | Wajib, default `Pending` |
@@ -147,8 +147,8 @@ Sistem harus memiliki tabel `order_items` dengan field assessment:
 
 | Field | PostgreSQL Type | Aturan |
 | --- | --- | --- |
-| `id` | `BIGSERIAL` | Primary key |
-| `order_id` | `BIGINT` | Foreign key ke `orders.id` |
+| `id` | `SERIAL` / `INTEGER` | Primary key |
+| `order_id` | `INTEGER` | Foreign key ke `orders.id` |
 | `product_name` | `VARCHAR(255)` | Wajib |
 | `quantity` | `INTEGER` | Wajib dan lebih dari nol |
 | `subtotal` | `NUMERIC(10,2)` | Wajib dan tidak negatif |
@@ -192,13 +192,14 @@ Request yang dipilih:
   "items": [
     {
       "inventory_id": 1,
-      "quantity": 1
+      "quantity": 1,
+      "subtotal": 2000000
     }
   ]
 }
 ```
 
-Client tidak boleh menentukan `subtotal`, `grand_total`, nama produk, atau harga final. Nilai tersebut harus berasal dari Inventory API dan dihitung oleh server untuk mencegah manipulasi.
+Inventory API assessment hanya menyediakan nama produk dan jumlah stok, tanpa harga. Karena itu client mengirim subtotal per item. Nama produk tetap berasal dari Inventory API, sedangkan subtotal order, nilai diskon, dan grand total dihitung ulang oleh server dari subtotal item yang tervalidasi. Client tidak boleh menentukan nilai total order, status, nomor order, atau nama produk.
 
 ### FR-CO-02 — Validasi Checkout
 
@@ -209,6 +210,7 @@ Aturan validasi request:
 - `items` wajib berupa array dengan minimal satu item.
 - `inventory_id` wajib berupa integer positif.
 - `quantity` wajib berupa integer positif.
+- `subtotal` item wajib berupa angka positif dengan maksimal dua digit desimal.
 - Inventory ID duplikat ditolak agar kalkulasi dan audit tidak ambigu.
 - Field yang tidak dikenal ditolak.
 
@@ -235,7 +237,7 @@ Sistem harus menangani response tidak valid, timeout, connection error, dan stat
 Perhitungan dilakukan server:
 
 ```text
-item_subtotal = unit_price × quantity
+item_subtotal = subtotal item tervalidasi dari request
 order_subtotal = jumlah seluruh item_subtotal
 discount_amount = order_subtotal × discount / 100
 grand_total = order_subtotal - discount_amount
@@ -400,7 +402,39 @@ HTTP request, business event penting, error fungsi, kegagalan external API, dan 
 
 ## 7. Kontrak Response
 
-### 7.1 Response Checkout Berhasil
+### 7.1 Response Checkout Dasar Phase 2
+
+Pada Phase 2, checkout membuat order dan item setelah inventory dinyatakan tersedia. Pembayaran belum dijalankan sehingga status awal order adalah `Pending`.
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 2,
+    "order_number": "ORD-202609-002",
+    "payment_method": "Credit Card",
+    "status": "Pending",
+    "subtotal": "2000000.00",
+    "discount": "10.00",
+    "grand_total": "1800000.00",
+    "order_date": "2026-09-04T08:30:00.000Z",
+    "items": [
+      {
+        "id": 2,
+        "order_id": 2,
+        "product_name": "HUAWEI MATEPAD SE",
+        "quantity": 1,
+        "subtotal": "2000000.00"
+      }
+    ]
+  },
+  "requestId": "8be2d021-e56a-4b7a-a9e3-edbfdf97fc4a"
+}
+```
+
+Endpoint mengembalikan HTTP `201 Created`. Nilai uang dikirim sebagai string dua digit desimal agar presisinya tidak berubah ketika diserialisasi ke JSON.
+
+### 7.2 Response Checkout Setelah Integrasi Pembayaran Phase 3
 
 ```json
 {
@@ -417,7 +451,9 @@ HTTP request, business event penting, error fungsi, kegagalan external API, dan 
 }
 ```
 
-### 7.2 Response Error
+Phase 3 memperluas hasil checkout dengan `transaction_id` dan status pembayaran terverifikasi tanpa mengubah aturan pembuatan order pada Phase 2.
+
+### 7.3 Response Error
 
 ```json
 {
@@ -433,12 +469,12 @@ HTTP request, business event penting, error fungsi, kegagalan external API, dan 
 }
 ```
 
-### 7.3 Status Code
+### 7.4 Status Code
 
 | HTTP status | Penggunaan |
 | --- | --- |
-| 200 | Request GET berhasil atau checkout selesai |
-| 201 | Resource berhasil dibuat jika endpoint dipisah |
+| 200 | Request GET berhasil |
+| 201 | `POST /checkout` berhasil membuat order dan item |
 | 400 | Request tidak dapat diproses secara sintaks atau aturan umum |
 | 404 | Order atau inventory tidak ditemukan |
 | 409 | Konflik status atau pembayaran sudah diproses |
@@ -696,11 +732,11 @@ Tidak termasuk Phase 0: instalasi Prisma, koneksi database, pembuatan schema, da
 
 ### Urutan Pengerjaan
 
-- [ ] **Phase 1.1 — Prisma foundation:** install dependency Prisma, siapkan Prisma config, hubungkan `DATABASE_URL`, generate client, dan verifikasi koneksi database.
-- [ ] **Phase 1.2 — Schema dan migration:** modelkan `orders` serta `order_items`, buat constraint dan foreign key, lalu terapkan migration.
-- [ ] **Phase 1.3 — Jawaban SQL A1–A7:** tulis seluruh query assessment ke `database/queries.txt` dan pastikan contoh insert serta query read menghasilkan data yang benar.
-- [ ] **Phase 1.4 — Read API:** implementasikan endpoint read-only orders dan order items beserta DTO, service, Swagger, dan error handling.
-- [ ] **Phase 1.5 — Verifikasi database:** jalankan integration test, validasi constraint, dokumentasikan strategi recovery/rollback, dan siapkan export `database.sql` untuk final delivery.
+- [x] **Phase 1.1 — Prisma foundation:** install dependency Prisma, siapkan Prisma config, hubungkan `DATABASE_URL`, generate client, dan verifikasi koneksi database.
+- [x] **Phase 1.2 — Schema dan migration:** modelkan `orders` serta `order_items`, buat constraint dan foreign key, lalu terapkan migration.
+- [x] **Phase 1.3 — Jawaban SQL A1–A7:** tulis seluruh query assessment ke `database/queries.txt` dan pastikan contoh insert serta query read menghasilkan data yang benar.
+- [x] **Phase 1.4 — Read API:** implementasikan endpoint read-only orders dan order items beserta DTO, service, Swagger, dan error handling.
+- [x] **Phase 1.5 — Verifikasi database:** jalankan integration test, validasi constraint, dokumentasikan strategi recovery/rollback, dan siapkan export `database.sql` untuk final delivery.
 
 ### Acceptance Criteria
 
@@ -718,23 +754,116 @@ Tidak termasuk Phase 0: instalasi Prisma, koneksi database, pembuatan schema, da
 
 ### Scope
 
-- DTO dan validasi checkout.
-- `POST /checkout`.
-- Inventory client dan response validation.
-- Test case inventory ID 1, 2, dan 3.
-- Kalkulasi subtotal, discount, dan grand total.
-- Pembuatan order number.
-- Transaction penyimpanan order dan item.
-- Swagger untuk request serta response checkout dasar.
+- Buat `CheckoutModule`, `CheckoutController`, dan `CheckoutService` sebagai entry point proses checkout.
+- Sediakan `POST /checkout` yang membuat order berstatus `Pending`; proses pembayaran baru ditambahkan pada Phase 3.
+- Terima hanya `payment_method`, `discount`, `inventory_id`, `quantity`, dan subtotal per item dari client.
+- Validasi payload, tolak field asing, dan tolak inventory ID duplikat.
+- Buat Inventory client terpisah dengan timeout, validasi response, dan pemetaan error yang konsisten.
+- Verifikasi skenario inventory ID 1 dan 2 tersedia serta ID 3 tidak tersedia.
+- Ambil nama produk dan stok dari Inventory API; API assessment tidak menyediakan harga.
+- Hitung subtotal item, subtotal order, nilai discount, dan grand total menggunakan `Prisma.Decimal`.
+- Buat nomor order `ORD-YYYYMM-NNN` yang aman terhadap concurrent request.
+- Simpan order dan seluruh item dalam satu Prisma transaction setelah seluruh pemeriksaan eksternal selesai.
+- Tambahkan business log checkout dengan `requestId`, tanpa mencatat payload atau credential sensitif.
+- Dokumentasikan endpoint, request, response, dan seluruh error utama di Swagger.
+- Tambahkan unit test, integration test, e2e test, dan real API smoke test terpisah.
+
+### Kontrak Request Phase 2
+
+```http
+POST /checkout
+Content-Type: application/json
+```
+
+```json
+{
+  "payment_method": "Credit Card",
+  "discount": 10,
+  "items": [
+    {
+      "inventory_id": 1,
+      "quantity": 1,
+      "subtotal": 2000000
+    }
+  ]
+}
+```
+
+Aturan kontrak:
+
+- `payment_method` wajib berupa string yang tidak kosong dengan panjang maksimal 30 karakter.
+- `discount` opsional dan default `0`; nilainya harus berada pada rentang 0 sampai 100.
+- `items` wajib berupa array dengan minimal satu elemen.
+- `inventory_id` dan `quantity` wajib berupa integer positif.
+- `subtotal` item wajib berupa angka positif dengan maksimal dua digit desimal.
+- Dua item dengan `inventory_id` yang sama ditolak.
+- Field selain yang tercantum pada kontrak ditolak oleh global validation pipe.
+- `product_name`, subtotal order, grand total, status, nomor order, dan timestamp tidak diterima dari client.
+
+### Struktur Modul yang Direncanakan
+
+```text
+src/
+  checkout/
+    dto/
+      checkout-request.dto.ts
+      checkout-response.dto.ts
+    checkout.controller.ts
+    checkout.module.ts
+    checkout.service.ts
+    checkout-calculator.service.ts
+    order-number.service.ts
+  inventory/
+    dto/
+      inventory-response.dto.ts
+    inventory.client.ts
+    inventory.module.ts
+```
+
+Nama file dapat disederhanakan saat implementasi apabila pemisahan tidak memberikan manfaat, tetapi tanggung jawab HTTP inventory, kalkulasi, nomor order, dan orchestration checkout tetap dipisahkan agar mudah diuji.
+
+### Urutan Pengerjaan
+
+- [x] **Phase 2.1 — Kontrak checkout dan validasi:** buat modul, controller, service contract, request/response DTO, validasi nested items, duplicate inventory validator, serta registrasi tag Swagger. Endpoint belum dinyatakan selesai sebelum orchestration dan persistence pada phase berikutnya tersedia.
+- [x] **Phase 2.2 — Inventory integration:** buat Inventory client, konfigurasi base URL dan timeout, runtime response validation, pemetaan error, dan unit test deterministik untuk ID 1, 2, serta 3 menggunakan mock.
+- [x] **Phase 2.3 — Kalkulasi dan nomor order:** bentuk item dari data inventory, validasi quantity terhadap stok, hitung seluruh nominal dengan decimal arithmetic, dan buat nomor `ORD-YYYYMM-NNN` di dalam critical section database yang aman terhadap request bersamaan.
+- [x] **Phase 2.4 — Atomic persistence:** lakukan external inventory call sebelum transaction, lalu simpan order dan nested items dalam satu Prisma transaction. Tambahkan test commit, rollback, constraint, serta concurrent order number.
+- [x] **Phase 2.5 — Orchestration dan API completion:** hubungkan seluruh komponen ke `POST /checkout`, kembalikan HTTP 201 dengan kontrak Phase 2, lengkapi business log serta Swagger success/error response, dan pastikan order hasil checkout dapat dibaca dari endpoint Orders.
+- [x] **Phase 2.6 — Verifikasi Phase 2:** jalankan build, lint, unit, integration, dan e2e test; lakukan smoke test real Inventory API untuk ID 1, 2, dan 3 jika endpoint dapat diakses; perbarui README dengan contoh request dan troubleshooting.
+
+### Error Mapping Phase 2
+
+| Kondisi | HTTP status | Error code |
+| --- | ---: | --- |
+| Struktur payload atau field tidak valid | 400 | `BAD_REQUEST` |
+| Inventory ID tidak ditemukan | 404 | `INVENTORY_NOT_FOUND` |
+| Quantity melebihi stok atau stok habis | 422 | `INVENTORY_OUT_OF_STOCK` |
+| Response Inventory API tidak sesuai kontrak | 502 | `INVENTORY_INVALID_RESPONSE` |
+| Inventory API gagal atau tidak dapat dihubungi | 502 | `INVENTORY_UPSTREAM_ERROR` |
+| Inventory API melewati batas waktu | 504 | `INVENTORY_TIMEOUT` |
+| Nomor order tetap konflik setelah retry terbatas | 409 | `ORDER_NUMBER_CONFLICT` |
+| Penyimpanan database gagal | 500 | `CHECKOUT_PERSISTENCE_FAILED` |
+
+Pesan internal, stack trace, credential, dan response eksternal mentah tidak dikirim kepada client. Detail teknis dicatat pada structured log dengan `requestId` yang sama.
 
 ### Acceptance Criteria
 
+- `POST /checkout` tersedia di Swagger dan mengembalikan HTTP `201 Created` ketika checkout dasar berhasil.
 - Invalid payload ditolak dengan response konsisten.
+- Field nama produk, subtotal order, grand total, status, dan nomor order dari client ditolak.
+- Inventory ID duplikat ditolak sebelum melakukan penyimpanan.
 - ID 1 dan ID 2 dapat melanjutkan checkout.
 - ID 3 menghentikan checkout sebagai out-of-stock.
+- Timeout, upstream failure, dan response inventory tidak valid menghasilkan status serta error code yang sesuai.
 - Nilai uang dihitung server.
+- Seluruh nominal tersimpan dan dikembalikan dengan presisi dua digit desimal.
+- Nomor order mengikuti `ORD-YYYYMM-NNN`, tidak duplikat, dan aman terhadap concurrent request.
 - Order dan seluruh item disimpan atomik.
 - Kegagalan satu insert menyebabkan rollback penuh.
+- Panggilan Inventory API selesai sebelum database transaction dimulai.
+- Response sukses memiliki `requestId` dan order berstatus `Pending`.
+- Log minimal mencakup `checkout.received`, hasil pemeriksaan inventory, `checkout.persisted`, dan `checkout.failed` jika terjadi error.
+- Order yang baru dibuat dapat dibaca melalui `GET /orders/:id` dan `GET /orders/:id/items`.
 - Test unit, integration, dan e2e Phase 2 lulus.
 
 ## Phase 3 — Payment Integration
@@ -750,6 +879,15 @@ Tidak termasuk Phase 0: instalasi Prisma, koneksi database, pembuatan schema, da
 - Sinkronisasi `orders.status`.
 - Idempotency protection.
 - Error handling external payment.
+
+### Status Implementasi Berdasarkan Soal
+
+- [x] **C1 — Inquiry, pay, dan status:** checkout memanggil ketiga endpoint Payment API secara berurutan dan menggunakan `transaction_id` hasil inquiry pada proses berikutnya.
+- [x] **C2 — Validasi payment:** request selalu dibentuk dari order tersimpan; response memvalidasi transaction ID, amount, dan status sebelum digunakan.
+- [x] **C3 — Sinkronisasi status:** status order berubah menjadi `PAID` hanya setelah status pembayaran diverifikasi `PAID`.
+- [x] **C4 — Error dan audit:** kegagalan menghasilkan HTTP error aman, payment audit record berstatus `PAYMENT_FAILED`, serta structured log dengan `requestId`.
+- [x] **C5 — Debug log:** event inquiry, pay, status, keberhasilan, dan kegagalan ditulis ke `logs/debug.log` dengan redaction header kandidat.
+- [ ] **Real Payment API smoke test:** dilakukan setelah `CANDIDATE_NAME` aktual tersedia dan response nyata inquiry, pay, serta status dapat diverifikasi berurutan.
 
 ### Acceptance Criteria
 
@@ -824,6 +962,8 @@ tlm-backend-assessment/
 10. Frontend tidak dibuat; Swagger menjadi interface demonstrasi.
 11. Karena catatan "Nomor 1 tuliskan ke bentuk .txt" dapat ditafsirkan berbeda, `queries.txt` akan memuat seluruh jawaban SQL A1 sampai A7 agar tidak ada jawaban database yang terlewat.
 12. Credential database yang pernah dibagikan harus dirotasi. Nilai aslinya tidak disalin ke PRD, source code, `.env.example`, log, atau Git.
+13. Phase 2 menghentikan proses pada order berstatus `Pending`; response pembayaran dan status `PAID` baru menjadi bagian dari Phase 3.
+14. Inventory API assessment menyediakan `product_name` dan `stock`, tetapi tidak menyediakan harga. Oleh karena itu subtotal per item diterima dari request dan divalidasi, sementara agregat subtotal order, diskon, dan grand total selalu dihitung server.
 
 ## 16. Informasi yang Diisi Kemudian
 

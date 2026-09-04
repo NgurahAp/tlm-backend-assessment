@@ -14,7 +14,9 @@ export const environmentValidationSchema = Joi.object({
     .default('https://assessment.lumiere.dev/api/v1/payment'),
   EXTERNAL_API_TIMEOUT_MS: Joi.number().integer().positive().default(5000),
   CANDIDATE_NAME: Joi.string().allow('').default(''),
-  DATABASE_URL: Joi.string().allow('').optional(),
+  DATABASE_URL: Joi.string()
+    .uri({ scheme: ['postgresql', 'postgres'] })
+    .required(),
   LOG_LEVEL: Joi.string()
     .valid('trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent')
     .default('debug'),

@@ -19,7 +19,7 @@ export class HealthController {
   @ApiOperation({
     summary: 'Check application health',
     description:
-      'Checks the NestJS application process. Database connectivity is added in Phase 1.',
+      'Checks the NestJS application process. PostgreSQL connectivity is verified during application startup.',
   })
   @ApiOkResponse({
     description: 'The application process is healthy.',

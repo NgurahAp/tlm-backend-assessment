@@ -5,6 +5,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { setupApplication } from './../src/app.setup.js';
 import { AppModule } from './../src/app.module.js';
+import { PrismaService } from './../src/prisma/prisma.service.js';
 
 class TestRequestDto {
   @IsInt()
@@ -27,8 +28,12 @@ class TestPipelineController {
 
 describe('Application foundation (e2e)', () => {
   let app: INestApplication<App>;
+  let prisma: PrismaService;
+  let orderWithItemsId: number;
+  let orderWithoutItemsId: number;
+  const orderPrefix = `E2E-PHASE14-${process.pid}-`;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
       controllers: [TestPipelineController],
@@ -37,6 +42,44 @@ describe('Application foundation (e2e)', () => {
     app = moduleFixture.createNestApplication();
     setupApplication(app);
     await app.init();
+
+    prisma = app.get(PrismaService);
+    await prisma.order.deleteMany({
+      where: { orderNumber: { startsWith: orderPrefix } },
+    });
+
+    const orderWithItems = await prisma.order.create({
+      data: {
+        orderNumber: `${orderPrefix}001`,
+        paymentMethod: 'Credit Card',
+        status: 'E2E_READY',
+        subtotal: '2000000.00',
+        discount: '10.00',
+        grandTotal: '1800000.00',
+        orderDate: new Date('2026-07-01T03:00:00.000Z'),
+        items: {
+          create: {
+            productName: 'Huawei Smart Watch',
+            quantity: 1,
+            subtotal: '2000000.00',
+          },
+        },
+      },
+    });
+    const orderWithoutItems = await prisma.order.create({
+      data: {
+        orderNumber: `${orderPrefix}002`,
+        paymentMethod: 'Bank Transfer',
+        status: 'E2E_EMPTY',
+        subtotal: '1000000.00',
+        discount: '0.00',
+        grandTotal: '1000000.00',
+        orderDate: new Date('2026-07-02T03:00:00.000Z'),
+      },
+    });
+
+    orderWithItemsId = orderWithItems.id;
+    orderWithoutItemsId = orderWithoutItems.id;
   });
 
   it('/health (GET) returns health and a generated request ID', async () => {
@@ -80,6 +123,113 @@ describe('Application foundation (e2e)', () => {
     });
     expect(response.headers['x-request-id']).toBeDefined();
     expect(response.body.paths).toHaveProperty('/health');
+    expect(response.body.paths).toHaveProperty('/orders');
+    expect(response.body.paths).toHaveProperty('/orders/{id}');
+    expect(response.body.paths).toHaveProperty('/orders/{id}/items');
+  });
+
+  it('/orders (GET) supports pagination and exact status filtering', async () => {
+    const requestId = 'orders-list-request-123';
+    const response = await request(app.getHttpServer())
+      .get('/orders?page=1&limit=1&status=E2E_READY')
+      .set('X-Request-Id', requestId)
+      .expect(200);
+
+    expect(response.headers['x-request-id']).toBe(requestId);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: [
+        {
+          id: orderWithItemsId,
+          order_number: `${orderPrefix}001`,
+          payment_method: 'Credit Card',
+          status: 'E2E_READY',
+          subtotal: '2000000.00',
+          discount: '10.00',
+          grand_total: '1800000.00',
+        },
+      ],
+      meta: { page: 1, limit: 1, total: 1, totalPages: 1 },
+      requestId,
+    });
+    expect(Number.isNaN(Date.parse(response.body.data[0].order_date))).toBe(
+      false,
+    );
+  });
+
+  it('/orders/:id (GET) returns an order and its items', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/orders/${orderWithItemsId}`)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      success: true,
+      data: {
+        id: orderWithItemsId,
+        order_number: `${orderPrefix}001`,
+        items: [
+          {
+            order_id: orderWithItemsId,
+            product_name: 'Huawei Smart Watch',
+            quantity: 1,
+            subtotal: '2000000.00',
+          },
+        ],
+      },
+      requestId: response.headers['x-request-id'],
+    });
+  });
+
+  it('/orders/:id/items (GET) returns items or an empty list', async () => {
+    const populated = await request(app.getHttpServer())
+      .get(`/orders/${orderWithItemsId}/items`)
+      .expect(200);
+    const empty = await request(app.getHttpServer())
+      .get(`/orders/${orderWithoutItemsId}/items`)
+      .expect(200);
+
+    expect(populated.body.data).toEqual([
+      expect.objectContaining({
+        order_id: orderWithItemsId,
+        product_name: 'Huawei Smart Watch',
+      }),
+    ]);
+    expect(empty.body.data).toEqual([]);
+  });
+
+  it('rejects a non-positive order ID', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/orders/0')
+      .expect(400);
+
+    expect(response.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'BAD_REQUEST',
+        message: 'Request validation failed',
+      },
+      path: '/orders/0',
+    });
+    expect(response.body.error.details).toContain('id must not be less than 1');
+  });
+
+  it('returns ORDER_NOT_FOUND for an unknown order ID', async () => {
+    const requestId = 'missing-order-request-123';
+    const response = await request(app.getHttpServer())
+      .get('/orders/2147483647')
+      .set('X-Request-Id', requestId)
+      .expect(404);
+
+    expect(response.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'ORDER_NOT_FOUND',
+        message: 'Order with ID 2147483647 was not found',
+        details: [],
+      },
+      requestId,
+      path: '/orders/2147483647',
+    });
   });
 
   it('returns a consistent error containing the incoming request ID', async () => {
@@ -151,7 +301,12 @@ describe('Application foundation (e2e)', () => {
     );
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
+    if (prisma) {
+      await prisma.order.deleteMany({
+        where: { orderNumber: { startsWith: orderPrefix } },
+      });
+    }
     if (app) await app.close();
   });
 });

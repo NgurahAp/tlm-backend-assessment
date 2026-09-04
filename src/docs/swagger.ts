@@ -9,6 +9,8 @@ export function setupSwagger(app: INestApplication): void {
     )
     .setVersion('1.0.0')
     .addTag('Health', 'Application process health')
+    .addTag('Orders', 'Read-only order and order item queries')
+    .addTag('Checkout', 'Checkout and inventory validation')
     .addGlobalParameters({
       name: 'X-Request-Id',
       in: 'header',

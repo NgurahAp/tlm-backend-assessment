@@ -1,8 +1,10 @@
 import { environmentValidationSchema } from './env.validation.js';
 
 describe('environmentValidationSchema', () => {
-  it('provides safe defaults without requiring a database URL', () => {
-    const { error, value } = environmentValidationSchema.validate({});
+  it('provides safe defaults when a database URL is supplied', () => {
+    const { error, value } = environmentValidationSchema.validate({
+      DATABASE_URL: 'postgresql://user:password@localhost:5432/database',
+    });
 
     expect(error).toBeUndefined();
     expect(value).toMatchObject({
@@ -14,7 +16,15 @@ describe('environmentValidationSchema', () => {
       LOG_FILE: 'logs/debug.log',
       LOG_PRETTY: true,
     });
-    expect(value).not.toHaveProperty('DATABASE_URL');
+    expect(value.DATABASE_URL).toBe(
+      'postgresql://user:password@localhost:5432/database',
+    );
+  });
+
+  it('requires a PostgreSQL database URL', () => {
+    const { error } = environmentValidationSchema.validate({});
+
+    expect(error?.message).toContain('DATABASE_URL');
   });
 
   it('rejects invalid non-database configuration', () => {

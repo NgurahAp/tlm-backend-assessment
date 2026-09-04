@@ -5,10 +5,13 @@ import { LoggerModule } from 'nestjs-pino';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter.js';
 import { createLoggerOptions } from './common/logging/logger.options.js';
 import { AppValidationPipe } from './common/pipes/app-validation.pipe.js';
+import { CheckoutModule } from './checkout/checkout.module.js';
 import appConfig from './config/app.config.js';
 import { environmentValidationSchema } from './config/env.validation.js';
 import loggingConfig from './config/logging.config.js';
 import { HealthModule } from './health/health.module.js';
+import { OrdersModule } from './orders/orders.module.js';
+import { PrismaModule } from './prisma/prisma.module.js';
 
 @Module({
   imports: [
@@ -22,7 +25,10 @@ import { HealthModule } from './health/health.module.js';
       inject: [ConfigService],
       useFactory: createLoggerOptions,
     }),
+    PrismaModule,
     HealthModule,
+    OrdersModule,
+    CheckoutModule,
   ],
   providers: [
     {

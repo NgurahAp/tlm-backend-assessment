@@ -1,0 +1,59 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Order {
+  id            Int         @id @default(autoincrement())
+  orderNumber   String      @unique @map("order_number") @db.VarChar(50)
+  paymentMethod String      @map("payment_method") @db.VarChar(30)
+  status        String      @default("Pending") @db.VarChar(20)
+  subtotal      Decimal     @db.Decimal(10, 2)
+  discount      Decimal     @default(0) @db.Decimal(10, 2)
+  grandTotal    Decimal     @map("grand_total") @db.Decimal(10, 2)
+  orderDate     DateTime    @map("order_date") @db.Timestamp(6)
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  items         OrderItem[]
+  payment       Payment?
+
+  @@map("orders")
+}
+
+model Payment {
+  id               Int      @id @default(autoincrement())
+  orderId          Int      @unique @map("order_id")
+  transactionId    String?  @unique @map("transaction_id") @db.VarChar(100)
+  status           String   @default("INQUIRY_PENDING") @db.VarChar(30)
+  amount           Decimal  @db.Decimal(10, 2)
+  failureCode      String?  @map("failure_code") @db.VarChar(60)
+  failureMessage   String?  @map("failure_message") @db.VarChar(255)
+  externalResponse Json?    @map("external_response") @db.JsonB
+  inquiryAt        DateTime? @map("inquiry_at") @db.Timestamp(6)
+  paidAt           DateTime? @map("paid_at") @db.Timestamp(6)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("payments")
+}
+
+model OrderItem {
+  id          Int      @id @default(autoincrement())
+  orderId     Int      @map("order_id")
+  productName String   @map("product_name") @db.VarChar(255)
+  quantity    Int
+  subtotal    Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("order_items")
+}

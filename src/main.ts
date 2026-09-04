@@ -8,6 +8,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   const logger = app.get(Logger);
   app.useLogger(logger);
+  app.enableShutdownHooks();
 
   const configService = app.get(ConfigService);
   const port = configService.getOrThrow<number>('app.port');

@@ -101,7 +101,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     payload: NestErrorPayload,
     statusCode: number,
   ): { message: string; details: string[] } {
-    if (statusCode >= 500) {
+    if (statusCode === HttpStatus.INTERNAL_SERVER_ERROR) {
       return { message: 'Internal server error', details: [] };
     }
 
